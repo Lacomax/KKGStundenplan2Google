@@ -1,0 +1,15 @@
+# Dependencias opcionales para KKGStundenplan2Google
+#
+# El script principal (main.py) NO requiere dependencias externas.
+# Solo usa la biblioteca estándar de Python.
+#
+# Las siguientes dependencias son OPCIONALES para funcionalidades adicionales:
+
+# Para extracción automática de PDFs (pdf_to_json.py)
+PyPDF2>=3.0.0          # Extracción básica de texto desde PDF
+# pdfplumber>=0.10.0   # Recomendado: mejor extracción de tablas (descomenta si lo necesitas)
+
+# Para desarrollo y testing
+# pytest>=7.0.0        # Framework de testing
+# black>=23.0.0        # Formateador de código
+# mypy>=1.0.0          # Type checker
