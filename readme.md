@@ -1,10 +1,25 @@
-# Generador de Calendarios Escolares - Clases 7d y 7e
+# 📅 Generador de Calendarios Escolares KKG
 
-Este script genera archivos de calendario iCalendar (.ics) a partir de archivos JSON que contienen los horarios escolares de Diego (7d) y Mateo (7e).
+[![Python Version](https://img.shields.io/badge/python-3.6%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code Style](https://img.shields.io/badge/code%20style-optimized-brightgreen.svg)](https://github.com/Lacomax/KKGStundenplan2Google)
 
-## Requisitos
+Este script genera archivos de calendario iCalendar (.ics) a partir de archivos JSON que contienen los horarios escolares de las clases 7d y 7e, facilitando la importación a Google Calendar y otros clientes de calendario.
+
+## 🚀 Características
+
+- ✅ Conversión automática de JSON a formato iCalendar (.ics)
+- ✅ Soporte para zona horaria Europe/Berlin
+- ✅ Eventos recurrentes semanales con validación de datos
+- ✅ Type hints completos para mejor mantenibilidad
+- ✅ Logging detallado con modo verbose
+- ✅ Validación robusta de datos de entrada
+- ✅ Gestión automática de directorios
+
+## 📋 Requisitos
 
 - Python 3.6 o superior
+- No requiere dependencias externas (solo biblioteca estándar)
 
 ## Estructura del Proyecto
 
@@ -15,7 +30,19 @@ Este script genera archivos de calendario iCalendar (.ics) a partir de archivos 
   - `calendario_7d.ics`: Calendario para Diego (clase 7d)
   - `calendario_7e.ics`: Calendario para Mateo (clase 7e)
 
-## Uso
+## 🔧 Instalación
+
+1. Clona este repositorio:
+```bash
+git clone https://github.com/Lacomax/KKGStundenplan2Google.git
+cd KKGStundenplan2Google
+```
+
+2. No se requieren dependencias adicionales, solo Python 3.6+
+
+## 💻 Uso
+
+### Uso básico
 
 Ejecutar el script principal:
 
@@ -23,12 +50,26 @@ Ejecutar el script principal:
 python main.py
 ```
 
-Por defecto, el script busca los archivos JSON en el directorio actual y guarda los archivos ICS en la carpeta "output".
+Por defecto, el script busca los archivos JSON en el directorio actual y guarda los archivos ICS en la carpeta `output/`.
 
-Puedes especificar directorios personalizados:
+### Opciones avanzadas
+
+Especificar directorios personalizados:
 
 ```bash
 python main.py --input-dir ./datos --output-dir ./calendarios
+```
+
+Activar modo verbose para depuración:
+
+```bash
+python main.py --verbose
+```
+
+Ver todas las opciones disponibles:
+
+```bash
+python main.py --help
 ```
 
 ## Asignaturas y Profesores
@@ -137,11 +178,50 @@ https://icalendar.org/validator.html
 - El inicio del calendario se establece a partir del 31 de marzo de 2025 (primer lunes)
 - Las clases divididas (e.g., "f/l" o "e/e") indican grupos divididos en diferentes aulas
 
-## Solución de problemas
+## 🐛 Solución de problemas
 
 Si tienes problemas al importar los archivos .ics:
 
-1. Verifica que los archivos JSON estén correctamente formateados
-2. Asegúrate de que los finales de línea sean CRLF (Windows)
-3. Valida los archivos .ics en https://icalendar.org/validator.html antes de importar
-4. Si Google Calendar no acepta el archivo, intenta importarlo en otro cliente de calendario (Apple Calendar, Outlook) para identificar el problema
+1. **Verifica formato JSON**: Asegúrate de que los archivos JSON estén correctamente formateados
+2. **Usa modo verbose**: Ejecuta con `--verbose` para ver información detallada
+3. **Valida archivos .ics**: Usa https://icalendar.org/validator.html antes de importar
+4. **Prueba otros clientes**: Si Google Calendar falla, intenta con Apple Calendar u Outlook
+5. **Revisa logs**: El script proporciona mensajes de error detallados
+
+### Errores comunes
+
+- **"Archivo no encontrado"**: Verifica que los archivos `7d.json` y `7e.json` existan en el directorio de entrada
+- **"Evento X fuera de rango"**: Revisa que los días estén entre 1-5 y los períodos entre 1-12
+- **"Faltan campos requeridos"**: Cada evento debe tener `dia`, `periodo`, `asignatura` y `aula`
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas. Por favor:
+
+1. Fork el proyecto
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+## 📝 Licencia
+
+Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+
+## 👨‍💻 Autor
+
+**Lacomax** - [GitHub](https://github.com/Lacomax)
+
+## 🙏 Agradecimientos
+
+- KKG (Käthe-Kollwitz-Gymnasium) por los horarios escolares
+- Comunidad de Python por las herramientas y librerías
+- Todos los contribuidores del proyecto
+
+## 📞 Contacto
+
+Si tienes preguntas o sugerencias, por favor abre un issue en GitHub.
+
+---
+
+⭐ Si este proyecto te fue útil, considera darle una estrella en GitHub!

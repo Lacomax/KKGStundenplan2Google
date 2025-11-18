@@ -1,15 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Generador de Calendarios Escolares
+
+Este módulo convierte horarios escolares desde archivos JSON a formato iCalendar (.ics)
+para facilitar la importación en Google Calendar y otros clientes de calendario.
+
+Author: KKG Stundenplan Team
+License: MIT
+"""
 
 import json
-import os
 import argparse
-from datetime import datetime
-from datetime import timedelta
+import logging
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
 
-# Definiciones globales
+# ============================================================================
+# CONSTANTES GLOBALES
+# ============================================================================
+
+# Configuración de calendario
 DIAS_SEMANA = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
 DIAS_RRULE = ["", "MO", "TU", "WE", "TH", "FR"]
+DIAS_CURSO_ESCOLAR = 180  # Duración del curso escolar en días
+TIMEZONE = "Europe/Berlin"
+PRODID_PREFIX = "-//HorarioEscolar//Clase"
+
+# Horarios de clase (formato 24h)
 HORARIOS = [
     {"inicio": "08:10", "fin": "08:55"},
     {"inicio": "08:55", "fin": "09:40"},
@@ -61,64 +80,178 @@ ASIGNATURAS = {
     "mittag": "Almuerzo"
 }
 
-def cargar_json(nombre_archivo):
-    """Carga los datos desde un archivo JSON."""
+def cargar_json(nombre_archivo: str) -> Optional[Dict[str, Any]]:
+    """
+    Carga los datos desde un archivo JSON.
+
+    Args:
+        nombre_archivo: Ruta al archivo JSON a cargar
+
+    Returns:
+        Diccionario con los datos del JSON o None si hay error
+
+    Raises:
+        No lanza excepciones, las captura y retorna None
+
+    Example:
+        >>> datos = cargar_json('7d.json')
+        >>> if datos:
+        ...     print(datos['clase'])
+        7d
+    """
     try:
         with open(nombre_archivo, 'r', encoding='utf-8') as archivo:
-            return json.load(archivo)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"Error al leer {nombre_archivo}: {e}")
+            datos = json.load(archivo)
+            # Validación básica de estructura
+            if not isinstance(datos, dict):
+                logging.error(f"{nombre_archivo}: El archivo debe contener un objeto JSON")
+                return None
+            if 'clase' not in datos or 'eventos' not in datos:
+                logging.error(f"{nombre_archivo}: Faltan campos requeridos 'clase' o 'eventos'")
+                return None
+            return datos
+    except FileNotFoundError:
+        logging.error(f"Archivo no encontrado: {nombre_archivo}")
+        return None
+    except json.JSONDecodeError as e:
+        logging.error(f"Error al decodificar JSON en {nombre_archivo}: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Error inesperado al leer {nombre_archivo}: {e}")
         return None
 
-def formatear_fecha(fecha, hora):
-    """Formatea una fecha y hora para iCalendar sin zona horaria."""
-    horas, minutos = map(int, hora.split(':'))
-    year = fecha.year
-    month = fecha.month
-    day = fecha.day
-    
-    return f"{year}{month:02d}{day:02d}T{horas:02d}{minutos:02d}00"
+def formatear_fecha(fecha: datetime, hora: str) -> str:
+    """
+    Formatea una fecha y hora para el formato iCalendar.
 
-def obtener_timestamp():
-    """Obtiene el timestamp actual en formato iCalendar."""
+    Args:
+        fecha: Objeto datetime con la fecha
+        hora: Hora en formato "HH:MM"
+
+    Returns:
+        Cadena en formato iCalendar "YYYYMMDDTHHmmss"
+
+    Example:
+        >>> from datetime import datetime
+        >>> fecha = datetime(2025, 3, 31)
+        >>> formatear_fecha(fecha, "08:10")
+        '20250331T081000'
+    """
+    horas, minutos = map(int, hora.split(':'))
+    return f"{fecha.year}{fecha.month:02d}{fecha.day:02d}T{horas:02d}{minutos:02d}00"
+
+def obtener_timestamp() -> str:
+    """
+    Obtiene el timestamp actual en formato iCalendar UTC.
+
+    Returns:
+        Timestamp en formato "YYYYMMDDTHHmmssZ"
+
+    Example:
+        >>> timestamp = obtener_timestamp()
+        >>> len(timestamp)
+        16
+        >>> timestamp.endswith('Z')
+        True
+    """
     ahora = datetime.now()
     return f"{ahora.year}{ahora.month:02d}{ahora.day:02d}T{ahora.hour:02d}{ahora.minute:02d}{ahora.second:02d}Z"
 
-def generar_icalendar(datos_clase):
-    """Genera un archivo iCalendar para una clase."""
+def validar_evento(evento: Dict[str, Any], indice: int) -> bool:
+    """
+    Valida que un evento tenga todos los campos requeridos.
+
+    Args:
+        evento: Diccionario con datos del evento
+        indice: Índice del evento para mensajes de error
+
+    Returns:
+        True si el evento es válido, False en caso contrario
+    """
+    campos_requeridos = ['dia', 'periodo', 'asignatura', 'aula']
+    for campo in campos_requeridos:
+        if campo not in evento:
+            logging.warning(f"Evento {indice}: falta el campo '{campo}'")
+            return False
+
+    # Validar rangos
+    if not (1 <= evento['dia'] <= 5):
+        logging.warning(f"Evento {indice}: día {evento['dia']} fuera de rango (1-5)")
+        return False
+
+    if not (1 <= evento['periodo'] <= len(HORARIOS)):
+        logging.warning(f"Evento {indice}: período {evento['periodo']} fuera de rango (1-{len(HORARIOS)})")
+        return False
+
+    return True
+
+
+def generar_icalendar(datos_clase: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    Genera un archivo iCalendar para una clase.
+
+    Args:
+        datos_clase: Diccionario con la estructura:
+            {
+                "clase": "7d",
+                "eventos": [
+                    {"dia": 1, "periodo": 1, "asignatura": "m", "aula": "A104"},
+                    ...
+                ]
+            }
+
+    Returns:
+        Contenido del archivo iCalendar en formato string o None si hay error
+
+    Example:
+        >>> datos = {"clase": "7d", "eventos": [{"dia": 1, "periodo": 1, "asignatura": "m", "aula": "A104"}]}
+        >>> ical = generar_icalendar(datos)
+        >>> ical is not None
+        True
+        >>> 'BEGIN:VCALENDAR' in ical
+        True
+    """
     if not datos_clase:
+        logging.error("No se proporcionaron datos de clase")
         return None
-        
-    clase = datos_clase["clase"]
-    eventos = datos_clase["eventos"]
-    
+
+    clase = datos_clase.get("clase", "Unknown")
+    eventos = datos_clase.get("eventos", [])
+
+    if not eventos:
+        logging.warning(f"Clase {clase}: no tiene eventos para procesar")
+        return None
+
     # Fecha base para los eventos (próximo lunes desde hoy)
     hoy = datetime.now()
     dias_hasta_lunes = (7 - hoy.weekday()) % 7
     if dias_hasta_lunes == 0:
         dias_hasta_lunes = 7
     fecha_base = hoy + timedelta(days=dias_hasta_lunes)
-    
-    # Fecha de fin de curso (6 meses desde hoy)
-    fecha_fin = hoy + timedelta(days=180)
+
+    # Fecha de fin de curso
+    fecha_fin = hoy + timedelta(days=DIAS_CURSO_ESCOLAR)
     fecha_fin_curso = f"{fecha_fin.year}{fecha_fin.month:02d}{fecha_fin.day:02d}T235959Z"
     
     # Timestamp para DTSTAMP
     dtstamp = obtener_timestamp()
     
     # Encabezado iCalendar con definición de zona horaria
-    lines = []
-    lines.append("BEGIN:VCALENDAR")
-    lines.append("VERSION:2.0")
-    lines.append(f"PRODID:-//HorarioEscolar//Clase {clase}//ES")
-    lines.append("CALSCALE:GREGORIAN")
-    lines.append("METHOD:PUBLISH")
-    lines.append(f"X-WR-CALNAME:Clase {clase}")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        f"PRODID:{PRODID_PREFIX} {clase}//ES",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:Clase {clase}"
+    ]
     
     # Definición de zona horaria
-    lines.append("BEGIN:VTIMEZONE")
-    lines.append("TZID:Europe/Berlin")
-    lines.append("X-LIC-LOCATION:Europe/Berlin")
+    lines.extend([
+        "BEGIN:VTIMEZONE",
+        f"TZID:{TIMEZONE}",
+        f"X-LIC-LOCATION:{TIMEZONE}"
+    ])
     lines.append("BEGIN:DAYLIGHT")
     lines.append("TZOFFSETFROM:+0100")
     lines.append("TZOFFSETTO:+0200")
@@ -136,22 +269,24 @@ def generar_icalendar(datos_clase):
     lines.append("END:VTIMEZONE")
     
     # Generar eventos
+    eventos_procesados = 0
     for i, evento in enumerate(eventos):
+        # Validar evento
+        if not validar_evento(evento, i):
+            continue
+
         # Obtener detalles del evento
         dia_semana = evento["dia"]
         periodo = evento["periodo"]
         asignatura_abrev = evento["asignatura"]
         aula = evento["aula"]
-        
+
         # Crear fecha para este evento
         fecha_evento = fecha_base + timedelta(days=(dia_semana - 1))
-        
-        # Obtener horario
-        if periodo <= len(HORARIOS):
-            hora_inicio = HORARIOS[periodo - 1]["inicio"]
-            hora_fin = HORARIOS[periodo - 1]["fin"]
-        else:
-            continue  # Saltar si el período está fuera de rango
+
+        # Obtener horario (el período ya fue validado)
+        hora_inicio = HORARIOS[periodo - 1]["inicio"]
+        hora_fin = HORARIOS[periodo - 1]["fin"]
         
         # Formatear fechas
         dtstart = formatear_fecha(fecha_evento, hora_inicio)
@@ -168,82 +303,159 @@ def generar_icalendar(datos_clase):
                 nombres_asignatura.append(parte)
         
         nombre_asignatura = '/'.join(nombres_asignatura)
-        
-        # Generar UID único
-        uid = f"clase{clase}-{i}@example.com"
+
+        # Generar UID único basado en clase, día, período y hash temporal
+        # Esto evita conflictos cuando se reimporta el calendario
+        uid = f"clase{clase}-d{dia_semana}p{periodo}-{dtstamp}@kkg-stundenplan.local"
         
         # Añadir evento con RRULE para repetición semanal
-        lines.append("BEGIN:VEVENT")
-        lines.append(f"DTSTART;TZID=Europe/Berlin:{dtstart}")
-        lines.append(f"DTEND;TZID=Europe/Berlin:{dtend}")
-        lines.append(f"DTSTAMP:{dtstamp}")
-        lines.append(f"UID:{uid}")
-        lines.append(f"RRULE:FREQ=WEEKLY;WKST=MO;BYDAY={DIAS_RRULE[dia_semana]};UNTIL={fecha_fin_curso}")
-        lines.append(f"SUMMARY:{nombre_asignatura}")
-        lines.append(f"LOCATION:{aula}")
-        lines.append(f"DESCRIPTION:{DIAS_SEMANA[dia_semana]} - Clase {clase}")
-        lines.append("END:VEVENT")
+        lines.extend([
+            "BEGIN:VEVENT",
+            f"DTSTART;TZID={TIMEZONE}:{dtstart}",
+            f"DTEND;TZID={TIMEZONE}:{dtend}",
+            f"DTSTAMP:{dtstamp}",
+            f"UID:{uid}",
+            f"RRULE:FREQ=WEEKLY;WKST=MO;BYDAY={DIAS_RRULE[dia_semana]};UNTIL={fecha_fin_curso}",
+            f"SUMMARY:{nombre_asignatura}",
+            f"LOCATION:{aula}",
+            f"DESCRIPTION:{DIAS_SEMANA[dia_semana]} - Clase {clase}",
+            "END:VEVENT"
+        ])
+        eventos_procesados += 1
     
     # Cerrar calendario
     lines.append("END:VCALENDAR")
-    
-    # Unir todas las líneas con CRLF como separador
+
+    # Verificar que se procesó al menos un evento
+    if eventos_procesados == 0:
+        logging.warning(f"Clase {clase}: ningún evento válido para procesar")
+        return None
+
+    logging.info(f"Clase {clase}: {eventos_procesados} de {len(eventos)} eventos procesados correctamente")
+
+    # Unir todas las líneas con CRLF como separador (estándar iCalendar)
     ical = "\r\n".join(lines) + "\r\n"
-    
+
     return ical
 
-def guardar_icalendar(ical, nombre_archivo):
-    """Guarda el contenido iCalendar en un archivo."""
+def guardar_icalendar(ical: Optional[str], nombre_archivo: str) -> bool:
+    """
+    Guarda el contenido iCalendar en un archivo.
+
+    Args:
+        ical: Contenido del calendario en formato iCalendar
+        nombre_archivo: Ruta donde guardar el archivo
+
+    Returns:
+        True si se guardó exitosamente, False en caso contrario
+
+    Note:
+        El archivo se abre en modo binario para preservar los finales
+        de línea CRLF requeridos por el estándar iCalendar.
+    """
     if not ical:
-        return False
-        
-    try:
-        # Importante: abrir en modo binario para preservar CRLF
-        with open(nombre_archivo, 'wb') as archivo:
-            archivo.write(ical.encode('utf-8'))
-        print(f"Archivo {nombre_archivo} generado con éxito.")
-        return True
-    except Exception as e:
-        print(f"Error al guardar {nombre_archivo}: {e}")
+        logging.warning("No hay contenido iCalendar para guardar")
         return False
 
-def main():
-    parser = argparse.ArgumentParser(description='Generador de calendarios escolares')
-    parser.add_argument('--input-dir', default='.', help='Directorio de entrada para archivos JSON')
-    parser.add_argument('--output-dir', default='output', help='Directorio de salida para archivos ICS')
+    try:
+        # Importante: abrir en modo binario para preservar CRLF
+        archivo_path = Path(nombre_archivo)
+        archivo_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(archivo_path, 'wb') as archivo:
+            archivo.write(ical.encode('utf-8'))
+
+        logging.info(f"Archivo {nombre_archivo} generado con éxito")
+        print(f"✓ Archivo {nombre_archivo} generado con éxito")
+        return True
+    except PermissionError:
+        logging.error(f"Sin permisos para escribir en {nombre_archivo}")
+        return False
+    except Exception as e:
+        logging.error(f"Error al guardar {nombre_archivo}: {e}")
+        return False
+
+def main() -> int:
+    """
+    Función principal del programa.
+
+    Returns:
+        Código de salida: 0 si éxito, 1 si error
+    """
+    # Configurar parser de argumentos
+    parser = argparse.ArgumentParser(
+        description='Generador de calendarios escolares iCalendar (.ics) desde archivos JSON',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Ejemplos:
+  %(prog)s
+  %(prog)s --input-dir ./datos --output-dir ./calendarios
+  %(prog)s --verbose
+        """
+    )
+    parser.add_argument(
+        '--input-dir',
+        default='.',
+        help='Directorio de entrada para archivos JSON (default: directorio actual)'
+    )
+    parser.add_argument(
+        '--output-dir',
+        default='output',
+        help='Directorio de salida para archivos ICS (default: output)'
+    )
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Mostrar información detallada de depuración'
+    )
     args = parser.parse_args()
-    
+
+    # Configurar logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s: %(message)s'
+    )
+
+    # Usar pathlib para manejo de rutas
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+
     # Crear directorio de salida si no existe
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
-    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logging.debug(f"Directorio de salida: {output_dir.absolute()}")
+
     # Cargar datos desde archivos JSON
-    json_7d_path = os.path.join(args.input_dir, '7d.json')
-    json_7e_path = os.path.join(args.input_dir, '7e.json')
-    
-    datos_7d = cargar_json(json_7d_path)
-    datos_7e = cargar_json(json_7e_path)
-    
-    if not datos_7d:
-        print(f"No se pudo cargar {json_7d_path}. Asegúrate de que el archivo existe.")
-    if not datos_7e:
-        print(f"No se pudo cargar {json_7e_path}. Asegúrate de que el archivo existe.")
-    
+    json_7d_path = input_dir / '7d.json'
+    json_7e_path = input_dir / '7e.json'
+
+    datos_7d = cargar_json(str(json_7d_path))
+    datos_7e = cargar_json(str(json_7e_path))
+
     # Generar calendarios desde los JSON
     ical_7d = generar_icalendar(datos_7d)
     ical_7e = generar_icalendar(datos_7e)
-    
+
     # Guardar calendarios
-    salida_7d = os.path.join(args.output_dir, 'calendario_7d.ics')
-    salida_7e = os.path.join(args.output_dir, 'calendario_7e.ics')
-    
-    exito_7d = guardar_icalendar(ical_7d, salida_7d)
-    exito_7e = guardar_icalendar(ical_7e, salida_7e)
-    
+    salida_7d = output_dir / 'calendario_7d.ics'
+    salida_7e = output_dir / 'calendario_7e.ics'
+
+    exito_7d = guardar_icalendar(ical_7d, str(salida_7d))
+    exito_7e = guardar_icalendar(ical_7e, str(salida_7e))
+
+    # Resumen final
     if exito_7d or exito_7e:
-        print(f"Proceso completado. Revisa la carpeta '{args.output_dir}' para los archivos generados.")
+        print(f"\n✓ Proceso completado. Revisa la carpeta '{output_dir}' para los archivos generados.")
+        if exito_7d and exito_7e:
+            return 0
+        else:
+            logging.warning("Solo se generó parcialmente algunos calendarios")
+            return 1
     else:
-        print("No se pudo generar ningún calendario.")
+        print("\n✗ No se pudo generar ningún calendario.")
+        logging.error("Verifica los archivos JSON y vuelve a intentar")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main())
