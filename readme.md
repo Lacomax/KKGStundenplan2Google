@@ -19,16 +19,27 @@ Este script genera archivos de calendario iCalendar (.ics) a partir de archivos 
 ## 📋 Requisitos
 
 - Python 3.6 o superior
-- No requiere dependencias externas (solo biblioteca estándar)
+- No requiere dependencias externas para la funcionalidad principal (solo biblioteca estándar)
+- **Opcional**: PyPDF2 para extracción automática de PDFs (ver [Extracción de PDFs](#-extracción-automática-desde-pdf))
 
-## Estructura del Proyecto
+## 📁 Estructura del Proyecto
 
-- `main.py`: Script principal para generar calendarios ICS
-- `7d.json`: Datos para la clase 7d (Diego)
-- `7e.json`: Datos para la clase 7e (Mateo)
-- `output/`: Carpeta donde se guardan los calendarios ICS generados
-  - `calendario_7d.ics`: Calendario para Diego (clase 7d)
-  - `calendario_7e.ics`: Calendario para Mateo (clase 7e)
+```
+KKGStundenplan2Google/
+├── main.py                          # ⭐ Script principal: JSON → ICS
+├── create_schedule_json.py          # 🛠️  Asistente interactivo para crear JSON
+├── pdf_to_json.py                   # 📄 Extractor experimental: PDF → JSON
+├── 7d.json                          # 📋 Datos horario clase 7d
+├── 7e.json                          # 📋 Datos horario clase 7e
+├── Stundenplan der Klasse 7d.pdf    # 📑 PDF original clase 7d
+├── Stundenplan der Klasse 7e.pdf    # 📑 PDF original clase 7e
+├── requirements.txt                 # 📦 Dependencias opcionales
+├── LICENSE                          # ⚖️  Licencia MIT
+├── .gitignore                       # 🙈 Archivos ignorados por Git
+└── output/                          # 📅 Calendarios generados
+    ├── calendario_7d.ics
+    └── calendario_7e.ics
+```
 
 ## 🔧 Instalación
 
@@ -71,6 +82,76 @@ Ver todas las opciones disponibles:
 ```bash
 python main.py --help
 ```
+
+## 📄 Creación de Archivos JSON
+
+Existen tres formas de crear los archivos JSON de horarios:
+
+### Opción 1: Asistente Interactivo (Recomendado)
+
+La forma más fácil es usar el asistente interactivo:
+
+```bash
+python create_schedule_json.py
+```
+
+El asistente te guiará paso a paso:
+1. Ingresa el identificador de la clase (ej: 7d)
+2. Agrega eventos uno por uno indicando:
+   - Día de la semana (1-5)
+   - Período (1-12)
+   - Asignatura
+   - Aula
+3. El script guardará automáticamente el archivo JSON
+
+### Opción 2: Creación Manual
+
+Crea un archivo JSON con esta estructura:
+
+```json
+{
+  "clase": "7d",
+  "eventos": [
+    {
+      "dia": 1,
+      "periodo": 1,
+      "asignatura": "d",
+      "aula": "A104"
+    },
+    {
+      "dia": 1,
+      "periodo": 2,
+      "asignatura": "d",
+      "aula": "A104"
+    }
+  ]
+}
+```
+
+**Campos requeridos:**
+- `dia`: 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes
+- `periodo`: 1-12 (número del período)
+- `asignatura`: Código de asignatura (ej: "m", "d", "f/l")
+- `aula`: Código del aula (ej: "A104", "A104/E02")
+
+### Opción 3: Extracción desde PDF (Experimental)
+
+**⚠️ Nota**: La extracción automática de PDFs con tablas es compleja. Este extractor es experimental.
+
+```bash
+# Instalar dependencia
+pip install PyPDF2
+
+# Intentar extracción
+python pdf_to_json.py "Stundenplan der Klasse 7d.pdf" --output 7d.json -v
+```
+
+Para mejores resultados con PDFs complejos:
+```bash
+pip install pdfplumber
+```
+
+**Recomendación**: Para horarios existentes, usa el **asistente interactivo** (Opción 1) o la **creación manual** (Opción 2).
 
 ## Asignaturas y Profesores
 
@@ -218,9 +299,111 @@ Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más det
 - Comunidad de Python por las herramientas y librerías
 - Todos los contribuidores del proyecto
 
+## 🔗 Integración con SubstituteFinder
+
+Este proyecto se integra perfectamente con [SubstituteFinder](https://github.com/Lacomax/SubstituteFinder), un sistema de monitoreo automático de sustituciones escolares.
+
+### ¿Cómo funciona la integración?
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Flujo de Trabajo                         │
+└─────────────────────────────────────────────────────────────┘
+
+1. 📄 PDF Horario Escolar
+        │
+        ↓ (pdf_to_json.py)
+2. 📋 Archivos JSON (7d.json, 7e.json)
+        │
+        ├─→ 📅 KKGStundenplan2Google (main.py)
+        │       └─→ calendario_7d.ics, calendario_7e.ics
+        │           └─→ Google Calendar / Apple Calendar
+        │
+        └─→ 🔍 SubstituteFinder (dsb_finder.py)
+                └─→ Monitorea DSB y detecta cambios
+                    └─→ Notificaciones de sustituciones
+```
+
+### Archivos JSON compartidos
+
+Ambos proyectos utilizan el **mismo formato JSON**:
+
+```json
+{
+  "clase": "7d",
+  "eventos": [
+    {
+      "dia": 1,
+      "periodo": 1,
+      "asignatura": "m",
+      "aula": "A104"
+    }
+  ]
+}
+```
+
+### Configuración de ambos repos
+
+**Paso 1**: Genera los JSON desde PDF (en este repo)
+```bash
+python pdf_to_json.py "Stundenplan der Klasse 7d.pdf" --output 7d.json
+python pdf_to_json.py "Stundenplan der Klasse 7e.pdf" --output 7e.json
+```
+
+**Paso 2**: Genera calendarios ICS (en este repo)
+```bash
+python main.py
+```
+
+**Paso 3**: Copia los JSON a SubstituteFinder
+```bash
+cp 7d.json 7e.json ../SubstituteFinder/data/
+```
+
+**Paso 4**: Ejecuta SubstituteFinder para monitorear sustituciones
+```bash
+cd ../SubstituteFinder
+python dsb_finder.py
+```
+
+### Beneficios de la integración
+
+- ✅ **Consistencia**: Un solo archivo JSON para ambos sistemas
+- ✅ **Actualización fácil**: Cambia el PDF → actualiza JSON → ambos repos sincronizados
+- ✅ **Workflow completo**: Desde PDF hasta calendario + monitoreo de sustituciones
+
+### Ejemplo completo
+
+```bash
+# 1. Clonar ambos repositorios
+git clone https://github.com/Lacomax/KKGStundenplan2Google.git
+git clone https://github.com/Lacomax/SubstituteFinder.git
+
+# 2. Generar JSON desde PDF
+cd KKGStundenplan2Google
+python pdf_to_json.py "Stundenplan der Klasse 7d.pdf" -o 7d.json
+
+# 3. Generar calendario
+python main.py
+
+# 4. Compartir JSON con SubstituteFinder
+cp 7d.json 7e.json ../SubstituteFinder/data/
+
+# 5. Importar calendario a Google Calendar
+# (manualmente o usando la API de Google Calendar)
+
+# 6. Monitorear sustituciones
+cd ../SubstituteFinder
+python dsb_finder.py
+```
+
 ## 📞 Contacto
 
 Si tienes preguntas o sugerencias, por favor abre un issue en GitHub.
+
+## 🔗 Proyectos Relacionados
+
+- [SubstituteFinder](https://github.com/Lacomax/SubstituteFinder) - Monitoreo automático de sustituciones escolares DSB
 
 ---
 
